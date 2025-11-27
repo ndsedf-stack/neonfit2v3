@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <title>MISSION CONTROL // V2</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700;800;900&family=Inter:wght@400;500;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  
+  <style>
+    :root {
+      --cyan: #00eaff;
+      --magenta: #ff2d95;
+      --dark-bg: #050510;
+      --glass: rgba(255, 255, 255, 0.05);
+    }
+    body {
+      background-color: var(--dark-bg);
+      font-family: 'Inter', sans-serif;
+      color: white;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .font-hud { font-family: 'Rajdhani', sans-serif; }
+    .font-mono-tech { font-family: 'Share Tech Mono', monospace; }
+    
+    /* FLIGHT PLAN TIMELINE */
+    .flight-plan {
+        display: flex;
+        align-items: center;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        padding: 20px;
+        gap: 40px; /* Espace pour les connecteurs */
+        position: relative;
+        scrollbar-width: none;
+    }
+    .flight-plan::-webkit-scrollbar { display: none; }
+    
+    .flight-node {
+        position: relative;
+        flex: 0 0 auto;
+        scroll-snap-align: center;
+        width: 48px; height: 48px;
+        border-radius: 12px;
+        background: #1e293b;
+        border: 1px solid rgba(255,255,255,0.1);
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        z-index: 10;
+    }
+    .flight-node.active {
+        transform: scale(1.3);
+        border-color: var(--cyan);
+        background: #0f172a;
+        box-shadow: 0 0 20px rgba(0, 234, 255, 0.4);
+        z-index: 20;
+    }
+    .flight-node.completed {
+        background: rgba(34, 197, 94, 0.1);
+        border-color: #22c55e;
+        color: #22c55e;
+    }
+
+    /* Connecteurs Supersets */
+    .connector {
+        position: absolute;
+        top: 50%;
+        height: 2px;
+        background: #334155;
+        transform: translateY(-50%);
+        z-index: 0;
+    }
+    .connector.active { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+    .connector.superset {
+        height: 4px;
+        background: linear-gradient(90deg, var(--magenta), #8b5cf6);
+        border-radius: 2px;
+    }
+
+    /* MISSION CARD */
+    .mission-card {
+        flex: 1;
+        margin: 0 16px 16px 16px;
+        background: #0a0a15;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 24px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 50px -20px rgba(0,0,0,0.7);
+    }
+    
+    /* Focus Line Big Text */
+    .focus-line {
+        font-family: 'Rajdhani', sans-serif;
+        font-weight: 900;
+        font-style: italic;
+        line-height: 0.9;
+        background: linear-gradient(180deg, #fff 0%, #94a3b8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0 0 20px rgba(255,255,255,0.2));
+    }
+
+    /* Action Button */
+    .btn-action {
+        background: linear-gradient(135deg, var(--cyan) 0%, #0284c7 100%);
+        color: black;
+        font-family: 'Rajdhani', sans-serif;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        box-shadow: 0 0 30px rgba(0, 234, 255, 0.3);
+        position: relative;
+        overflow: hidden;
+    }
+    .btn-action::after {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(rgba(255,255,255,0.4), transparent);
+        opacity: 0; transition: opacity 0.2s;
+    }
+    .btn-action:active::after { opacity: 1; }
+
+    /* Animations */
+    .slide-in { animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <script>document.addEventListener("touchstart", function(){}, true);</script>
+
+  <!-- HEADER COMPACT -->
+  <header class="flex justify-between items-center px-5 pt-safe pb-2 border-b border-white/5 bg-[#050510]/90 backdrop-blur-md z-50">
+      <div class="flex items-center gap-3">
+          <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]"></div>
+          <div>
+              <h1 class="text-xs font-bold text-slate-400 uppercase tracking-widest">MISSION EN COURS</h1>
+              <div class="text-sm font-hud font-bold text-white" id="header-title">LOADING...</div>
+          </div>
+      </div>
+      <div class="flex items-center gap-3">
+          <div class="text-right">
+              <div class="text-[9px] text-slate-500 font-bold uppercase">SESSION XP</div>
+              <div class="text-xs font-mono-tech text-[var(--magenta)] font-bold">+<span id="xp-session">0</span></div>
+          </div>
+          <button onclick="window.location.href='index.html'" class="w-8 h-8 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
+              <i data-lucide="x" class="w-4 h-4 text-slate-400"></i>
+          </button>
+      </div>
+  </header>
+
+  <!-- FLIGHT PLAN (TIMELINE) -->
+  <div class="relative h-24 flex items-center bg-[#020205]">
+      <!-- Track Line -->
+      <div class="absolute left-0 right-0 top-1/2 h-0.5 bg-white/5 -translate-y-1/2"></div>
+      
+      <div class="flight-plan w-full" id="flight-plan-container">
+          <!-- Nodes injected via JS -->
+      </div>
+      
+      <!-- Fade overlays -->
+      <div class="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[#020205] to-transparent pointer-events-none"></div>
+      <div class="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#020205] to-transparent pointer-events-none"></div>
+  </div>
+
+  <!-- MISSION CARD DOCK -->
+  <div class="mission-card" id="active-card">
+      <!-- Background Grid -->
+      <div class="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:30px_30px] opacity-50 pointer-events-none"></div>
+      
+      <!-- Card Header -->
+      <div class="p-6 border-b border-white/5 relative z-10">
+          <div class="flex justify-between items-start mb-2">
+              <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase" id="card-muscle">MUSCLE</span>
+              <i data-lucide="info" class="w-5 h-5 text-slate-600"></i>
+          </div>
+          <h2 class="text-3xl font-hud font-black text-white uppercase italic leading-none mb-1" id="card-title">EXERCICE</h2>
+          <div class="flex items-center gap-2 text-xs text-slate-400 font-medium">
+               <i data-lucide="zap" class="w-3 h-3 text-[var(--magenta)]"></i>
+               <span id="card-superset">Standard Set</span>
+          </div>
+      </div>
+
+      <!-- FOCUS LINE (MAIN ACTION) -->
+      <div class="flex-1 flex flex-col justify-center items-center relative z-10 py-4">
+          <div class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] mb-2">SÉRIE ACTUELLE</div>
+          <div class="text-8xl focus-line mb-2" id="focus-set">1<span class="text-4xl text-slate-600">/4</span></div>
+          
+          <!-- Stats Row -->
+          <div class="flex items-center gap-6 mt-4">
+              <div class="text-center">
+                  <div class="text-[9px] text-slate-500 uppercase font-bold">CHARGE</div>
+                  <div class="text-2xl font-mono-tech font-bold text-[var(--cyan)]"><span id="focus-weight">0</span><span class="text-sm text-slate-600">kg</span></div>
+              </div>
+              <div class="w-px h-8 bg-white/10"></div>
+              <div class="text-center">
+                  <div class="text-[9px] text-slate-500 uppercase font-bold">REPS</div>
+                  <div class="text-2xl font-mono-tech font-bold text-white" id="focus-reps">0</div>
+              </div>
+          </div>
+      </div>
+
+      <!-- SECONDARY GRID -->
+      <div class="grid grid-cols-3 border-t border-white/5 bg-black/20">
+          <div class="p-4 border-r border-white/5 text-center">
+              <div class="text-[9px] text-slate-500 uppercase font-bold">RPE</div>
+              <div class="text-sm font-bold text-yellow-500">8</div>
+          </div>
+          <div class="p-4 border-r border-white/5 text-center">
+              <div class="text-[9px] text-slate-500 uppercase font-bold">TEMPO</div>
+              <div class="text-sm font-bold text-white" id="card-tempo">3-1-2</div>
+          </div>
+          <div class="p-4 text-center">
+              <div class="text-[9px] text-slate-500 uppercase font-bold">REPOS</div>
+              <div class="text-sm font-bold text-white" id="card-rest">90s</div>
+          </div>
+      </div>
+
+      <!-- ACTION ROW -->
+      <div class="p-4 bg-[#020205]">
+          <div class="flex gap-3" id="action-container">
+              <button onclick="logSet()" class="btn-action flex-1 h-14 rounded-xl flex items-center justify-center gap-2 text-lg">
+                  VALIDER SÉRIE <i data-lucide="check" class="w-5 h-5"></i>
+              </button>
+              
+              <button onclick="skipRest()" id="btn-skip" class="hidden flex-1 h-14 rounded-xl bg-white/10 border border-white/10 text-white font-bold uppercase tracking-wider flex items-center justify-center gap-2">
+                  PASSER REPOS <i data-lucide="fast-forward" class="w-5 h-5"></i>
+              </button>
+          </div>
+          
+          <!-- REST TIMER OVERLAY (INSIDE CARD) -->
+          <div id="rest-overlay" class="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center z-20 opacity-0 pointer-events-none transition-opacity duration-300">
+               <div class="relative w-48 h-48 flex items-center justify-center mb-4">
+                   <svg class="w-full h-full -rotate-90"><circle cx="50%" cy="50%" r="45%" fill="none" stroke="#334155" stroke-width="4"/><circle id="rest-ring" cx="50%" cy="50%" r="45%" fill="none" stroke="var(--cyan)" stroke-width="4" stroke-dasharray="283" stroke-dashoffset="0" stroke-linecap="round"/></svg>
+                   <div class="absolute text-5xl font-mono-tech font-bold text-white" id="rest-digits">00:00</div>
+               </div>
+               <div class="text-xs font-bold text-slate-500 uppercase tracking-widest animate-pulse">RÉCUPÉRATION TACTIQUE</div>
+          </div>
+      </div>
+  </div>
+
+  <script type="module">
+    import programData from './program-data.js';
+
+    // STATE
+    let s = { week: 1, day: 'dimanche', exIdx: 0, setIdx: 0 };
+    let workout;
+    let restInterval;
+
+    // INIT
+    function init() {
+        lucide.createIcons();
+        const p = new URLSearchParams(window.location.search);
+        s.week = parseInt(p.get('week')) || 1;
+        s.day = p.get('day') || 'dimanche';
+        
+        try {
+            workout = programData.getWorkout(s.week, s.day);
+            document.getElementById('header-title').textContent = s.day.toUpperCase();
+            renderFlightPlan();
+            loadCard();
+        } catch(e) {
+            console.error(e);
+            alert("Erreur chargement données");
+        }
+    }
+
+    // FLIGHT PLAN RENDER
+    function renderFlightPlan() {
+        const container = document.getElementById('flight-plan-container');
+        container.innerHTML = '';
+        
+        workout.exercises.forEach((ex, i) => {
+            const node = document.createElement('div');
+            node.className = `flight-node ${i === s.exIdx ? 'active' : ''}`;
+            node.onclick = () => { s.exIdx = i; s.setIdx = 0; renderFlightPlan(); loadCard(); };
+            
+            // Icon Logic
+            let icon = 'dumbbell';
+            if(ex.name.includes('Leg')) icon = 'footprints';
+            if(ex.name.includes('Curl')) icon = 'biceps-flexed'; // Lucide doesn't have biceps, using fallback
+            
+            node.innerHTML = `<i data-lucide="activity" class="w-5 h-5 ${i === s.exIdx ? 'text-[var(--cyan)]' : 'text-slate-500'}"></i>`;
+            
+            // Connector for Supersets
+            if(ex.isSuperset && workout.exercises[i+1] && workout.exercises[i+1].isSuperset) {
+                 const conn = document.createElement('div');
+                 conn.className = 'absolute left-full top-1/2 w-10 h-1 bg-[var(--magenta)] z-0';
+                 node.appendChild(conn);
+            }
+            
+            container.appendChild(node);
+        });
+        
+        // Scroll to active
+        setTimeout(() => {
+            const active = container.querySelector('.active');
+            if(active) active.scrollIntoView({behavior: 'smooth', inline: 'center'});
+        }, 100);
+        lucide.createIcons();
+    }
+
+    // LOAD CARD DATA
+    function loadCard() {
+        const ex = workout.exercises[s.exIdx];
+        const card = document.getElementById('active-card');
+        
+        // Animation Reset
+        card.classList.remove('slide-in');
+        void card.offsetWidth; // trigger reflow
+        card.classList.add('slide-in');
+
+        document.getElementById('card-title').textContent = ex.name;
+        document.getElementById('card-muscle').textContent = ex.muscle[0];
+        document.getElementById('card-superset').textContent = ex.isSuperset ? `Superset avec ${ex.supersetWith}` : "Single Station";
+        document.getElementById('focus-set').innerHTML = `${s.setIdx + 1}<span class="text-4xl text-slate-600">/${ex.sets}</span>`;
+        document.getElementById('focus-weight').textContent = ex.weight;
+        document.getElementById('focus-reps').textContent = ex.reps;
+        document.getElementById('card-tempo').textContent = ex.tempo || "3-1-2";
+        document.getElementById('card-rest').textContent = (ex.rest || 90) + 's';
+    }
+
+    // ACTIONS
+    window.logSet = () => {
+        // XP Gain
+        const xpEl = document.getElementById('xp-session');
+        xpEl.textContent = parseInt(xpEl.textContent) + 50;
+        
+        // Logic
+        const ex = workout.exercises[s.exIdx];
+        s.setIdx++;
+        
+        if(s.setIdx < ex.sets) {
+            // Next Set
+            document.getElementById('focus-set').innerHTML = `${s.setIdx + 1}<span class="text-4xl text-slate-600">/${ex.sets}</span>`;
+            startRest(ex.rest || 90);
+        } else {
+            // Exercise Done
+            if(s.exIdx < workout.exercises.length - 1) {
+                s.exIdx++;
+                s.setIdx = 0;
+                renderFlightPlan();
+                loadCard();
+            } else {
+                alert("MISSION ACCOMPLIE !");
+                window.location.href = 'index.html';
+            }
+        }
+    };
+
+    function startRest(duration) {
+        const overlay = document.getElementById('rest-overlay');
+        const btnMain = document.querySelector('.btn-action'); // Hide validate
+        const btnSkip = document.getElementById('btn-skip');
+        
+        overlay.classList.remove('opacity-0', 'pointer-events-none');
+        btnMain.classList.add('hidden');
+        btnSkip.classList.remove('hidden');
+        
+        let rem = duration;
+        const ring = document.getElementById('rest-ring');
+        const total = duration;
+        const circ = 283; // 2*pi*45
+
+        if(restInterval) clearInterval(restInterval);
+
+        restInterval = setInterval(() => {
+            rem--;
+            const m = Math.floor(rem/60).toString().padStart(2,'0');
+            const s = (rem%60).toString().padStart(2,'0');
+            document.getElementById('rest-digits').textContent = `${m}:${s}`;
+            
+            const offset = circ - ((rem/total) * circ);
+            ring.style.strokeDashoffset = offset;
+
+            if(rem <= 0) window.skipRest();
+        }, 1000);
+    }
+
+    window.skipRest = () => {
+        clearInterval(restInterval);
+        document.getElementById('rest-overlay').classList.add('opacity-0', 'pointer-events-none');
+        document.querySelector('.btn-action').classList.remove('hidden');
+        document.getElementById('btn-skip').classList.add('hidden');
+    };
+
+    init();
+  </script>
+</body>
+</html>
